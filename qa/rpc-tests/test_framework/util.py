@@ -377,30 +377,6 @@ def initialize_chain(test_dir, num_nodes, cachedir, cache_behavior='current'):
                     block_time += PRE_BLOSSOM_BLOCK_TARGET_SPACING
                 # Must sync before next peer starts generating blocks
                 sync_blocks(rpcs)
-                # Shut down and restart every zebrad node.
-                # This works around a zebrad problem where it won't broadcast
-                # received blocks to other connected nodes, and is a workaround
-                # for zebrad not supporting `addnode remove`.
-                # TODO: Remove this workaround once either of the following is resolved:
-                # - https://github.com/ZcashFoundation/zebra/issues/10329
-                # - https://github.com/ZcashFoundation/zebra/issues/10332
-                stop_nodes(rpcs)
-                wait_bitcoinds()
-                for i in range(MAX_NODES):
-                    config = zebrad_config(node_dir(cachedir, i))
-                    args = [ zcashd_binary(), "-c="+config, "start" ]
-                    bitcoind_processes[i] = subprocess.Popen(args)
-                    if os.getenv("PYTHON_DEBUG", ""):
-                        print("initialize_chain: %s started, waiting for RPC to come up" % (zcashd_binary(),))
-                    wait_for_bitcoind_start(bitcoind_processes[i], rpc_url(i), i)
-                    if os.getenv("PYTHON_DEBUG", ""):
-                        print("initialize_chain: RPC successfully started")
-                for i in range(MAX_NODES):
-                    try:
-                        rpcs.append(get_rpc_proxy(rpc_url(i), i))
-                    except:
-                        sys.stderr.write("Error connecting to "+rpc_url(i)+"\n")
-                        sys.exit(1)
         # Check that local time isn't going backwards
         assert_greater_than(time.time() + 1, block_time)
 
@@ -705,15 +681,18 @@ def wait_bitcoinds():
 def connect_nodes(from_connection, node_num):
     ip_port = "127.0.0.1:"+str(p2p_port(node_num))
     # TODO: Replace `add` with `onetry` if zebrad implements it.
-    from_connection.addnode(ip_port, "add")
+    # zebrad may reject a duplicate `addnode add` for a peer already in its
+    # addnode list (it doesn't support `addnode remove`), so ignore that error.
+    try:
+        from_connection.addnode(ip_port, "add")
+    except JSONRPCException:
+        pass
     # poll until version handshake complete to avoid race conditions
     # with transaction relaying
     while True:
-        for peer in from_connection.getpeerinfo():
-            if peer['addr'] == ip_port:
-                return
-            else:
-                time.sleep(1)
+        if any(peer['addr'] == ip_port for peer in from_connection.getpeerinfo()):
+            return
+        time.sleep(1)
 
 def connect_nodes_bi(nodes, a, b):
     connect_nodes(nodes[a], b)
