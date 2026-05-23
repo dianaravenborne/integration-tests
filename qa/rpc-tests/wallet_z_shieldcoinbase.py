@@ -354,7 +354,6 @@ class WalletZShieldCoinbaseTest(BitcoinTestFramework):
         # passing the same taddr 3 times must not select each UTXO 3
         # times. We compare against a *single*-listing baseline rather
         # than a triple-listing.
-        eligible_before = self._count_mature_coinbase(w0)
         pre_private = Decimal(w0.z_gettotalbalance(1, True)['private'])
         single_result = w0.z_shieldcoinbase([w0_taddr], w0_zaddr)
         # Cancel: we only want the count. There's no cancel API, so
